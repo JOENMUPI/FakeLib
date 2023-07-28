@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Button,
   Box,
@@ -20,15 +20,14 @@ import InputContainerC from './components/inputContainer'
 import styles from './styles/page.style'
 
 export default function Home () {
-  const genders = ['Todas', ...new Set(booksData.library.map(item => item.book.genre))]
-  const PageMutiplicator = Math.trunc(Math.max(...booksData.library.map(item => item.book.pages)) / 100)
+  const genders = useRef(['Todas', ...new Set(booksData.library.map(item => item.book.genre))])
+  const PageMutiplicator = useRef(Math.trunc(Math.max(...booksData.library.map(item => item.book.pages)) / 100))
   const [openDialogFlag, setOpenDialogFlag] = useState(false)
   const [bookSelected, setbookSelected] = useState({})
   const [firstLoading, setFirstLoading] = useState(true)
-  const [unselectedBooks, setUnselectedBooks] = useState([])
   const [selectedBooks, setSelectedBooks] = useState([])
-  const [genre, setGenre] = useState('Todas')
-  const [pages, setPages] = useState(0)
+  const [genreSelected, setGenreSelected] = useState('Todas')
+  const [pagesFilter, setPagesFilter] = useState(0)
 
   useEffect(() => {
     const prevLocal = window.localStorage.getItem('selectedBooks')
@@ -37,24 +36,16 @@ export default function Home () {
     setSelectedBooks(selectedBooksAux)
     setFirstLoading(false)
 
-    const manejarCambio = (e) => {
+    const handleStorage = (e) => {
       if (e.key === 'selectedBooks') setSelectedBooks(JSON.parse(e.newValue))
     }
 
-    window.addEventListener('storage', manejarCambio)
+    window.addEventListener('storage', handleStorage)
 
     return () => {
-      window.removeEventListener('storage', manejarCambio)
+      window.removeEventListener('storage', handleStorage)
     }
   }, [])
-
-  useEffect(() => {
-    let unselectedBooksAux = getUnselectedBooks(selectedBooks)
-
-    if (genre !== 'Todas') unselectedBooksAux = unselectedBooksAux.filter(x => x.book.genre === genre)
-    if (pages !== 0) unselectedBooksAux = unselectedBooksAux.filter(x => x.book.pages > pages * PageMutiplicator)
-    setUnselectedBooks(unselectedBooksAux)
-  }, [genre, pages, selectedBooks])
 
   const handleOpenDialog = (book) => {
     setbookSelected(book)
@@ -66,17 +57,17 @@ export default function Home () {
   }
 
   const getUnselectedBooks = (selectedBooksAux) => {
-    if (selectedBooksAux.length > 0) {
-      return booksData.library.filter(x => !selectedBooksAux.map(item => item.book.ISBN).includes(x.book.ISBN))
-    } else return booksData.library
+    return (selectedBooksAux.length > 0)
+      ? booksData.library.filter(x => !selectedBooksAux.map(item => item.book.ISBN).includes(x.book.ISBN))
+      : booksData.library
   }
 
   const handleChangePagesInput = (e) => {
-    setPages(e.target.value)
+    setPagesFilter(e.target.value)
   }
 
   const handleChangeGenreInput = (e) => {
-    setGenre(e.target.value)
+    setGenreSelected(e.target.value)
   }
 
   const handleAddBook = (e, book) => {
@@ -93,6 +84,14 @@ export default function Home () {
     window.localStorage.setItem('selectedBooks', JSON.stringify(newSelectedBooks))
   }
 
+  const unselectedBooks = useMemo(() => {
+    let unselectedBooksAux = getUnselectedBooks(selectedBooks)
+
+    if (genreSelected !== 'Todas') unselectedBooksAux = unselectedBooksAux.filter(x => x.book.genre === genreSelected)
+    if (pagesFilter !== 0) unselectedBooksAux = unselectedBooksAux.filter(x => x.book.pages > pagesFilter * PageMutiplicator.current)
+    return unselectedBooksAux
+  }, [genreSelected, pagesFilter, selectedBooks])
+
   if (firstLoading) return null
   return (
     <>
@@ -107,19 +106,19 @@ export default function Home () {
           </Typography>
           <Box sx={styles.boxInputs}>
             <InputContainerC title='Filtrar por páginas'>
-              <Tooltip title={`Buscar libros sobre las ${pages * PageMutiplicator} páginas`}>
-                <Slider aria-label='pages-slider' value={pages} onChange={handleChangePagesInput} />
+              <Tooltip title={`Buscar libros sobre las ${pagesFilter * PageMutiplicator.current} páginas`}>
+                <Slider aria-label='pages-slider' value={pagesFilter} onChange={handleChangePagesInput} />
               </Tooltip>
             </InputContainerC>
             <InputContainerC title='Filtrar por género'>
               <Select
                 sx={styles.select}
                 variant='standard'
-                value={genre}
+                value={genreSelected}
                 label='genre'
                 onChange={handleChangeGenreInput}
               >
-                {genders.map((item, index) => (
+                {genders.current.map((item, index) => (
                   <MenuItem key={`menu-item-gen-${index}`} value={item}>
                     {item}
                   </MenuItem>
@@ -129,8 +128,12 @@ export default function Home () {
           </Box>
           <Box sx={styles.boxContainerBook}>
             <Grid container sx={styles.gridContainerBooksLeft}>
-              {unselectedBooks.map((item, index) => (
-                <BookItemC key={`key-unselected-book-${index}`} xs={3} item={item} onClick={() => handleOpenDialog(item.book)}>
+              {unselectedBooks.map((item) => (
+                <BookItemC key={`key-unselected-book-${item.book.ISBN}`}
+                  xs={3}
+                  item={item}
+                  onClick={() => handleOpenDialog(item.book)}
+                >
                   <Tooltip title={`Agregar ${item.book.title} a la lista de lectura`}>
                     <Button onClick={(e) => handleAddBook(e, item) } variant='contained' sx={styles.button}>
                       <BookmarkAdd/>
@@ -147,8 +150,12 @@ export default function Home () {
               Lista de lectura
             </Typography>
             <Grid container sx={styles.gridContainerBooksRight}>
-              {selectedBooks.map((item, index) => (
-                <BookItemC key={`key-selected-book-${index}`} xs={6} item={item} onClick={() => handleOpenDialog(item.book)}>
+              {selectedBooks.map((item) => (
+                <BookItemC key={`key-selected-book-${item.book.ISBN}`}
+                  xs={6}
+                  item={item}
+                  onClick={() => handleOpenDialog(item.book)}
+                >
                   <Tooltip title={`Eliminar ${item.book.title} de la lista de lectura`}>
                     <Button onClick={(e) => handleCancelBook(e, item)} variant='contained' color='error' sx={styles.button}>
                       <BookmarkRemove/>
